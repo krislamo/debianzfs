@@ -32,8 +32,8 @@ swapoff --all
 
 # Partition
 sgdisk -n2:1M:+512M -t2:EF00 "$DISK"
-sgdisk -n3:0:+1G -t3:BF01 "$DISK"
-sgdisk -n4:0:0 -t4:BF00 "$DISK"
+sgdisk -n3:0:+1G    -t3:BF01 "$DISK"
+sgdisk -n4:0:0      -t4:BF00 "$DISK"
 
 # Create boot pool
 zpool create -f \
@@ -176,9 +176,10 @@ echo REMAKE_INITRD=yes > /etc/dkms/zfs.conf
 # Install Grub for UEFI
 apt-get install -y dosfstools
 echo REMAKE_INITRD=yes > /etc/dkms/zfs.conf
-mkdosfs -F 32 -s 1 -n EFI "${DISK}2"
+mkdosfs -F 32 -s 1 -n EFI "\${DISK}2"
 mkdir /boot/efi
-echo "${DISK}2" /boot/efi vfat defaults 0 0 >> /etc/fstab
+BLKID_BOOT="/dev/disk/by-uuid/\$(blkid -s UUID -o value \${DISK}2)"
+echo "\${BLKID_BOOT} /boot/efi vfat defaults 0 0" >> /etc/fstab
 mount /boot/efi
 apt-get install -y grub-efi-amd64 shim-signed
 apt-get purge -y os-prober
