@@ -21,11 +21,7 @@ Due to [licensing concerns with OpenZFS and Linux](https://openzfs.github.io/ope
     ```
     sudo cp output/debianzfs.qcow2 /var/lib/libvirt/images/
     ```
-4. Grab auto-generated passwords from the log
-    ```
-    grep PW= debianzfs.log
-    ```
-5. Make a Libvirt VM and start
+4. Make a Libvirt VM and start
     ```
     sudo virt-install --name debianzfs \
       --description 'Debian ZFS' \
@@ -37,19 +33,19 @@ Due to [licensing concerns with OpenZFS and Linux](https://openzfs.github.io/ope
       --graphics vnc,listen=127.0.0.1,port=5901 \
       --boot uefi,loader=/usr/shar/OVMF/OVMF_CODE.fd
     ```
-6. If dropped into UEFI shell
+5. If dropped into UEFI shell
     ```
     Shell> FS0:
     FS0:\> EFI\debian\grubx64.efi
     ```
 
-7. If dropped into initramfs
+6. If dropped into initramfs
     ```
     zpool import -f rpool
     exit
     ```
-8. Enter rpool password
-9. Login with root's password
+7. Enter rpool password: `letmeinzfs!`
+8. Login with root's password: `changeme`
 
 ### License
 - DebianZFS is licensed under 0BSD, a public domain equivalent license; see the `LICENSE` file for more information

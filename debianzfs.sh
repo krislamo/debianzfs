@@ -3,62 +3,60 @@
 # Script is based off official guide: see "Debian Bullseye Root on ZFS"
 # https://openzfs.github.io/openzfs-docs/Getting%20Started/Debian/Debian%20Bullseye%20Root%20on%20ZFS.html
 
-# Settings
-export DEBIAN_FRONTEND=noninteractive
-DISK=$1
-ZFSHOST=$2
-[ -z "$ZFSHOST" ] && ZFSHOST="debianzfs"
-CODENAME="bullseye"
-ZFSROOT="/mnt"
+#################
+### Functions ###
+#################
+function usage () {
+  echo "Usage: ./$(basename "$0") [-mpPr] <DISK> [hostname]"
+}
 
-# Display commands
-set -x
+function disk_check () {
+  DISK_TYPE=$(file "$1" | awk '{ print $2$3 }')
+  if [ "$DISK_TYPE" != "blockspecial" ]; then
+    echo "ERROR: Disk '$1' is not a block device"
+    exit 1
+  fi
+}
 
-# Is the DISK path a block device?
-DISK_TYPE=$(file "${DISK}" | awk '{ print $2$3 }')
-if [ "$DISK_TYPE" != "blockspecial" ]; then
-	echo "ERROR: Disk '${DISK}' is not a block device"
-	exit 1;
-fi
+function disk_status () {
+  OUTPUT=$(wipefs "$1")
+  if [ -n "$OUTPUT" ]; then
+    echo "ERROR: $1 is not empty"
+    echo "$OUTPUT"
+    exit 1
+  fi
+}
 
-###############################################
-### Step 1: Prepare The Install Environment ###
-###############################################
+function password_prompt () {
+  unset PASSWORD_PROMPT_RESULT
+  while true; do
+    read -r -s -p "${1}: " password
+    echo ''
+    read -r -s -p "${1} (confirm): " password_confirm
+    echo ''
+    if [ "$password" == "$password_confirm" ]; then
+      if [ -z "$password" ]; then
+        echo "Password can not be empty, try again."
+      else
+        break
+      fi
+    else
+      echo "Passwords did not match, try again."
+    fi
+  done
+  PASSWORD_PROMPT_RESULT="$password"
+  export PASSWORD_PROMPT_RESULT
+}
 
-# 1. Boot the Debian GNU/Linux Live CD... done
-# 2. Setup and update the repositories
-SOURCES_LIST="/etc/apt/sources.list"
-[ -f "$SOURCES_LIST" ] && mv "$SOURCES_LIST" "$SOURCES_LIST.$(date +%s).bak"
-echo "deb http://deb.debian.org/debian/ ${CODENAME} main contrib" > "$SOURCES_LIST"
-apt-get update
 
-# 3. Optional: Install and start the OpenSSH server in the Live CD environment... done
-# 4. Disable automounting... skipping, no GUI-based automounting present
-# 5. Become root... done
-# 6. Install ZFS in the Live CD environment (plus some tools)
-apt-get install -y debootstrap gdisk pwgen zfsutils-linux
+function disk_format () {
+  sgdisk -n2:1M:+512M -t2:EF00 "$1"
+  sgdisk -n3:0:+1G    -t3:BF01 "$1"
+  sgdisk -n4:0:0      -t4:BF00 "$1"
+}
 
-###############################
-### Step 2: Disk Formatting ###
-###############################
-
-# 1. Set a variable with the disk name
-# 2. If you are re-using a disk, clear it as necessary... skipping: do this yourself :)
-# Ensure swap partitions are not in use
-swapoff --all
-
-# 3. Partition your disk(s)
-# Run this for UEFI booting (for use now or in the future)
-sgdisk -n2:1M:+512M -t2:EF00 "$DISK"
-
-# Run this for the boot pool
-sgdisk -n3:0:+1G    -t3:BF01 "$DISK"
-
-# Unencrypted or ZFS native encryption
-sgdisk -n4:0:0      -t4:BF00 "$DISK"
-
-# 4. Create the boot pool
-zpool create -f \
+function create_boot_pool () {
+  zpool create -f \
     -o ashift=12 \
     -o autotrim=on -d \
     -o cachefile=/etc/zfs/zpool.cache \
@@ -80,14 +78,12 @@ zpool create -f \
     -O compression=lz4 \
     -O normalization=formD \
     -O relatime=on \
-    -O canmount=off -O mountpoint=/boot -R "$ZFSROOT" \
-		bpool "${DISK}3"
+    -O canmount=off -O mountpoint=/boot -R "$1" \
+		bpool "$2"
+}
 
-# 5. Create the root pool
-# ZFS native encryption (with a random password)
-RPOOLPW="$(pwgen -s 16 1)"
-echo "$RPOOLPW" | \
-zpool create -f \
+function create_root_pool () {
+  echo "$3" | zpool create -f \
     -o ashift=12 \
     -o autotrim=on \
     -O encryption=on -O keylocation=prompt -O keyformat=passphrase \
@@ -95,9 +91,128 @@ zpool create -f \
     -O compression=lz4 \
     -O normalization=formD \
     -O relatime=on \
-    -O canmount=off -O mountpoint=/ -R "$ZFSROOT" \
-		rpool "${DISK}4"
-unset RPOOLPW
+    -O canmount=off -O mountpoint=/ -R "$1" \
+		rpool "$2"
+}
+
+################
+### Settings ###
+################
+# Static
+export DEBIAN_FRONTEND=noninteractive
+CODENAME="bullseye"
+
+# Options
+while getopts ':m:p:P:r:' OPTION; do
+  case "$OPTION" in
+  m) MIRROR="$OPTARG";;
+  p) ROOTPW="$OPTARG";;
+  P) RPOOLPW="$OPTARG";;
+  r) ZFSROOT="$OPTARG";;
+  ?)
+    usage
+    exit 1;;
+  esac
+done
+shift "$((OPTIND -1))"
+
+# Parameters
+DISK=$1
+ZFSHOST=$2
+
+# Verify variables
+[ -z "$ZFSROOT" ] && ZFSROOT="/mnt"
+
+if [ -z "$DISK" ]; then
+  echo "ERROR: DISK not set"
+  usage
+  exit 1
+fi
+
+if [ -z "$ZFSHOST" ]; then
+  echo "ERROR: HOSTNAME not set"
+  usage
+  exit 1
+fi
+
+if [ -z "$ROOTPW" ]; then
+  password_prompt "Root Passphrase"
+  ROOTPW="$PASSWORD_PROMPT_RESULT"
+  unset PASSWORD_PROMPT_RESULT
+fi
+
+if [ -z "$RPOOLPW" ]; then
+  password_prompt "ZFS Encryption Passphrase"
+  RPOOLPW="$PASSWORD_PROMPT_RESULT"
+  unset PASSWORD_PROMPT_RESULT
+fi
+
+if [ "$DEBUG" == "true" ]; then
+  echo "CODENAME=${CODENAME}"
+  echo "DISK=${DISK}"
+  echo "ZFSHOST=${ZFSHOST}"
+  echo "ZFSROOT=${ZFSROOT}"
+  echo "MIRROR=${MIRROR}"
+  echo "ROOTPW=${ROOTPW}"
+  echo "RPOOLPW=${RPOOLPW}"
+fi
+
+# Display commands
+set -x
+
+# Are the DISK paths block devices? AND
+# Are the DISK pathes empty devices? i.e., no filesystem signatures
+disk_check "$DISK"
+disk_status "$DISK"
+if [ -n "$MIRROR" ]; then
+  disk_check "$MIRROR"
+  disk_status "$MIRROR"
+fi
+
+###############################################
+### Step 1: Prepare The Install Environment ###
+###############################################
+
+# 1. Boot the Debian GNU/Linux Live CD... done
+# 2. Setup and update the repositories
+SOURCES_LIST="/etc/apt/sources.list"
+[ -f "$SOURCES_LIST" ] && mv "$SOURCES_LIST" "$SOURCES_LIST.$(date +%s).bak"
+echo "deb http://deb.debian.org/debian/ ${CODENAME} main contrib" > "$SOURCES_LIST"
+apt-get update
+
+# 3. Optional: Install and start the OpenSSH server in the Live CD environment... done
+# 4. Disable automounting... skipping, no GUI-based automounting present
+# 5. Become root... done
+# 6. Install ZFS in the Live CD environment (plus some tools)
+apt-get install -y debootstrap gdisk zfsutils-linux
+
+###############################
+### Step 2: Disk Formatting ###
+###############################
+
+# 1. Set a variable with the disk name
+# 2. If you are re-using a disk, clear it as necessary... skipping: do this yourself :)
+# Ensure swap partitions are not in use
+swapoff --all
+
+# 3. Partition your disk(s)
+# UEFI booting + boot pool + ZFS native encryption
+disk_format "$DISK"
+[ -n "$MIRROR" ] && disk_format "$MIRROR"
+
+# 4. Create the boot pool
+if [ -z "$MIRROR" ]; then
+  create_boot_pool "$ZFSROOT" "${DISK}3"
+else
+  create_boot_pool "$ZFSROOT" "mirror ${DISK}3 ${MIRROR}3"
+fi
+
+# 5. Create the root pool
+if [ -z "$MIRROR" ]; then
+  create_root_pool "$ZFSROOT" "${DISK}4" "$RPOOLPW"
+else
+  create_root_pool "$ZFSROOT" "mirror ${DISK}4 ${MIRROR}4" "$RPOOLPW"
+fi
 
 ###################################
 ### Step 3: System Installation ###
@@ -185,8 +300,8 @@ deb-src http://deb.debian.org/debian ${CODENAME}-updates main contrib
 EOF
 
 # 4. Bind the virtual filesystems from the LiveCD environment to the new system and chroot into it
-# Copy DISK var under ZFSROOT
-echo "DISK=${DISK}" > "$ZFSROOT/var/tmp/zfsenv"
+# Copy DISK/MIRROR vars under ZFSROOT
+echo -e "DISK=${DISK}\nROOTPW=${ROOTPW}" > "$ZFSROOT/var/tmp/zfsenv"
 
 # Bind
 mount --make-private --rbind /dev /mnt/dev
@@ -232,7 +347,6 @@ apt-get install -y grub-efi-amd64 shim-signed
 apt-get purge -y os-prober
 
 # 10. Set a root password
-ROOTPW=$(pwgen 8 1)
 echo "root:\$ROOTPW" | chpasswd
 unset ROOTPW
 
