@@ -7,91 +7,91 @@
 ### Functions ###
 #################
 function usage () {
-  echo "Usage: ./$(basename "$0") [-mpPr] <DISK> [hostname]"
+	echo "Usage: ./$(basename "$0") [-mpPr] <DISK> [hostname]"
 }
 
 function disk_check () {
-  DISK_TYPE=$(file "$1" | awk '{ print $2$3 }')
-  if [ "$DISK_TYPE" != "blockspecial" ]; then
-    echo "ERROR: Disk '$1' is not a block device"
-    exit 1
-  fi
+	DISK_TYPE=$(file "$1" | awk '{ print $2$3 }')
+	if [ "$DISK_TYPE" != "blockspecial" ]; then
+		echo "ERROR: Disk '$1' is not a block device"
+		exit 1
+	fi
 }
 
 function disk_status () {
-  OUTPUT=$(wipefs "$1")
-  if [ -n "$OUTPUT" ]; then
-    echo "ERROR: $1 is not empty"
-    echo "$OUTPUT"
-    exit 1
-  fi
+	OUTPUT=$(wipefs "$1")
+	if [ -n "$OUTPUT" ]; then
+		echo "ERROR: $1 is not empty"
+		echo "$OUTPUT"
+		exit 1
+	fi
 }
 
 function password_prompt () {
-  unset PASSWORD_PROMPT_RESULT
-  while true; do
-    read -r -s -p "${1}: " password
-    echo ''
-    read -r -s -p "${1} (confirm): " password_confirm
-    echo ''
-    if [ "$password" == "$password_confirm" ]; then
-      if [ -z "$password" ]; then
-        echo "Password can not be empty, try again."
-      else
-        break
-      fi
-    else
-      echo "Passwords did not match, try again."
-    fi
-  done
-  PASSWORD_PROMPT_RESULT="$password"
-  export PASSWORD_PROMPT_RESULT
+	unset PASSWORD_PROMPT_RESULT
+	while true; do
+		read -r -s -p "${1}: " password
+		echo ''
+		read -r -s -p "${1} (confirm): " password_confirm
+		echo ''
+		if [ "$password" == "$password_confirm" ]; then
+			if [ -z "$password" ]; then
+				echo "Password can not be empty, try again."
+			else
+				break
+			fi
+		else
+			echo "Passwords did not match, try again."
+		fi
+	done
+	PASSWORD_PROMPT_RESULT="$password"
+	export PASSWORD_PROMPT_RESULT
 }
 
 
 function disk_format () {
-  sgdisk -n2:1M:+512M -t2:EF00 "$1"
-  sgdisk -n3:0:+1G    -t3:BF01 "$1"
-  sgdisk -n4:0:0      -t4:BF00 "$1"
+	sgdisk -n2:1M:+512M -t2:EF00 "$1"
+	sgdisk -n3:0:+1G    -t3:BF01 "$1"
+	sgdisk -n4:0:0      -t4:BF00 "$1"
 }
 
 function create_boot_pool () {
-  zpool create -f \
-    -o ashift=12 \
-    -o autotrim=on -d \
-    -o cachefile=/etc/zfs/zpool.cache \
-    -o feature@async_destroy=enabled \
-    -o feature@bookmarks=enabled \
-    -o feature@embedded_data=enabled \
-    -o feature@empty_bpobj=enabled \
-    -o feature@enabled_txg=enabled \
-    -o feature@extensible_dataset=enabled \
-    -o feature@filesystem_limits=enabled \
-    -o feature@hole_birth=enabled \
-    -o feature@large_blocks=enabled \
-    -o feature@livelist=enabled \
-    -o feature@lz4_compress=enabled \
-    -o feature@spacemap_histogram=enabled \
-    -o feature@zpool_checkpoint=enabled \
-    -O devices=off \
-    -O acltype=posixacl -O xattr=sa \
-    -O compression=lz4 \
-    -O normalization=formD \
-    -O relatime=on \
-    -O canmount=off -O mountpoint=/boot -R "$1" \
+	zpool create -f \
+		-o ashift=12 \
+		-o autotrim=on -d \
+		-o cachefile=/etc/zfs/zpool.cache \
+		-o feature@async_destroy=enabled \
+		-o feature@bookmarks=enabled \
+		-o feature@embedded_data=enabled \
+		-o feature@empty_bpobj=enabled \
+		-o feature@enabled_txg=enabled \
+		-o feature@extensible_dataset=enabled \
+		-o feature@filesystem_limits=enabled \
+		-o feature@hole_birth=enabled \
+		-o feature@large_blocks=enabled \
+		-o feature@livelist=enabled \
+		-o feature@lz4_compress=enabled \
+		-o feature@spacemap_histogram=enabled \
+		-o feature@zpool_checkpoint=enabled \
+		-O devices=off \
+		-O acltype=posixacl -O xattr=sa \
+		-O compression=lz4 \
+		-O normalization=formD \
+		-O relatime=on \
+		-O canmount=off -O mountpoint=/boot -R "$1" \
 		bpool "$2"
 }
 
 function create_root_pool () {
-  echo "$3" | zpool create -f \
-    -o ashift=12 \
-    -o autotrim=on \
-    -O encryption=on -O keylocation=prompt -O keyformat=passphrase \
-    -O acltype=posixacl -O xattr=sa -O dnodesize=auto \
-    -O compression=lz4 \
-    -O normalization=formD \
-    -O relatime=on \
-    -O canmount=off -O mountpoint=/ -R "$1" \
+	echo "$3" | zpool create -f \
+		-o ashift=12 \
+		-o autotrim=on \
+		-O encryption=on -O keylocation=prompt -O keyformat=passphrase \
+		-O acltype=posixacl -O xattr=sa -O dnodesize=auto \
+		-O compression=lz4 \
+		-O normalization=formD \
+		-O relatime=on \
+		-O canmount=off -O mountpoint=/ -R "$1" \
 		rpool "$2"
 }
 
@@ -104,15 +104,15 @@ CODENAME="bullseye"
 
 # Options
 while getopts ':m:p:P:r:' OPTION; do
-  case "$OPTION" in
-  m) MIRROR="$OPTARG";;
-  p) ROOTPW="$OPTARG";;
-  P) RPOOLPW="$OPTARG";;
-  r) ZFSROOT="$OPTARG";;
-  ?)
-    usage
-    exit 1;;
-  esac
+	case "$OPTION" in
+		m) MIRROR="$OPTARG";;
+		p) ROOTPW="$OPTARG";;
+		P) RPOOLPW="$OPTARG";;
+		r) ZFSROOT="$OPTARG";;
+		?)
+			usage
+			exit 1;;
+	esac
 done
 shift "$((OPTIND -1))"
 
@@ -124,37 +124,37 @@ ZFSHOST=$2
 [ -z "$ZFSROOT" ] && ZFSROOT="/mnt"
 
 if [ -z "$DISK" ]; then
-  echo "ERROR: DISK not set"
-  usage
-  exit 1
+	echo "ERROR: DISK not set"
+	usage
+	exit 1
 fi
 
 if [ -z "$ZFSHOST" ]; then
-  echo "ERROR: HOSTNAME not set"
-  usage
-  exit 1
+	echo "ERROR: HOSTNAME not set"
+	usage
+	exit 1
 fi
 
 if [ -z "$ROOTPW" ]; then
-  password_prompt "Root Passphrase"
-  ROOTPW="$PASSWORD_PROMPT_RESULT"
-  unset PASSWORD_PROMPT_RESULT
+	password_prompt "Root Passphrase"
+	ROOTPW="$PASSWORD_PROMPT_RESULT"
+	unset PASSWORD_PROMPT_RESULT
 fi
 
 if [ -z "$RPOOLPW" ]; then
-  password_prompt "ZFS Encryption Passphrase"
-  RPOOLPW="$PASSWORD_PROMPT_RESULT"
-  unset PASSWORD_PROMPT_RESULT
+	password_prompt "ZFS Encryption Passphrase"
+	RPOOLPW="$PASSWORD_PROMPT_RESULT"
+	unset PASSWORD_PROMPT_RESULT
 fi
 
 if [ "$DEBUG" == "true" ]; then
-  echo "CODENAME=${CODENAME}"
-  echo "DISK=${DISK}"
-  echo "ZFSHOST=${ZFSHOST}"
-  echo "ZFSROOT=${ZFSROOT}"
-  echo "MIRROR=${MIRROR}"
-  echo "ROOTPW=${ROOTPW}"
-  echo "RPOOLPW=${RPOOLPW}"
+	echo "CODENAME=${CODENAME}"
+	echo "DISK=${DISK}"
+	echo "ZFSHOST=${ZFSHOST}"
+	echo "ZFSROOT=${ZFSROOT}"
+	echo "MIRROR=${MIRROR}"
+	echo "ROOTPW=${ROOTPW}"
+	echo "RPOOLPW=${RPOOLPW}"
 fi
 
 # Display commands
@@ -165,8 +165,8 @@ set -x
 disk_check "$DISK"
 disk_status "$DISK"
 if [ -n "$MIRROR" ]; then
-  disk_check "$MIRROR"
-  disk_status "$MIRROR"
+	disk_check "$MIRROR"
+	disk_status "$MIRROR"
 fi
 
 ###############################################
@@ -202,16 +202,16 @@ disk_format "$DISK"
 
 # 4. Create the boot pool
 if [ -z "$MIRROR" ]; then
-  create_boot_pool "$ZFSROOT" "${DISK}3"
+	create_boot_pool "$ZFSROOT" "${DISK}3"
 else
-  create_boot_pool "$ZFSROOT" "mirror ${DISK}3 ${MIRROR}3"
+	create_boot_pool "$ZFSROOT" "mirror ${DISK}3 ${MIRROR}3"
 fi
 
 # 5. Create the root pool
 if [ -z "$MIRROR" ]; then
-  create_root_pool "$ZFSROOT" "${DISK}4" "$RPOOLPW"
+	create_root_pool "$ZFSROOT" "${DISK}4" "$RPOOLPW"
 else
-  create_root_pool "$ZFSROOT" "mirror ${DISK}4 ${MIRROR}4" "$RPOOLPW"
+	create_root_pool "$ZFSROOT" "mirror ${DISK}4 ${MIRROR}4" "$RPOOLPW"
 fi
 
 ###################################
@@ -432,7 +432,7 @@ CHROOT
 
 # 3. Run these commands in the LiveCD environment to unmount all filesystems
 mount | grep -v zfs | tac | awk '/\/mnt/ {print $3}' | \
-    xargs -I{} umount -lf {}
+	xargs -I{} umount -lf {}
 
 # 4. If this fails for rpool, mounting it on boot will fail and you will need to
 #    zpool import -f rpool, then exit in the initamfs prompt
