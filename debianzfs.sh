@@ -95,6 +95,14 @@ function create_root_pool () {
 		rpool "$2"
 }
 
+function mirror_grub () {
+	umount /boot/efi
+	dd if="${1}-part2" of="${2}-part2"
+	efibootmgr -c -g -d "$2" -p 2 \
+		-L "debian-${3}" -l '\EFI\debian\grubx64.efi'
+	mount /boot/efi
+}
+
 ################
 ### Settings ###
 ################
@@ -103,8 +111,9 @@ export DEBIAN_FRONTEND=noninteractive
 CODENAME="bullseye"
 
 # Options
-while getopts ':m:p:P:r:' OPTION; do
+while getopts ':gm:p:P:r:' OPTION; do
 	case "$OPTION" in
+		g) GRUB_MIRROR="true";;
 		m) MIRROR="$OPTARG";;
 		p) ROOTPW="$OPTARG";;
 		P) RPOOLPW="$OPTARG";;
@@ -119,6 +128,24 @@ shift "$((OPTIND -1))"
 # Parameters
 DISK=$1
 ZFSHOST=$2
+
+# Post-boot grub mirror?
+if [ "$GRUB_MIRROR" == "true" ]; then
+	while true; do
+		echo -e "ORIGINAL GRUB: $DISK\nMIRROR TO: $MIRROR"
+		read -r -p "Would you like to mirror GRUB? [y/N]: " yn
+		case $yn in
+			[Yy]*)
+				disk_check "$DISK"
+				disk_check "$MIRROR"
+				mirror_grub "$DISK" "$MIRROR" 2
+				exit 0;;
+			?)
+				echo "ABORTED: User did not confirm mirroring"
+				exit 1;;
+		esac
+	done
+fi
 
 # Verify variables
 [ -z "$ZFSROOT" ] && ZFSROOT="/mnt"
@@ -303,6 +330,22 @@ EOF
 # Copy DISK/MIRROR vars under ZFSROOT
 echo -e "DISK=${DISK}\nROOTPW=${ROOTPW}" > "$ZFSROOT/var/tmp/zfsenv"
 
+# Copy self and GRUB mirror helper script into chroot
+if [ -n "$MIRROR" ]; then
+	cp "$0" "$ZFSROOT/usr/local/bin/debianzfs"
+	chmod u+x "$ZFSROOT/usr/local/bin/debianzfs"
+	DDIF=$(find /dev/disk/by-id -lname ../../"$(basename "$DISK")" | tail -n1)
+	DDOF=$(find /dev/disk/by-id -lname ../../"$(basename "$MIRROR")" | tail -n1)
+	HELPER_SCRIPT="/root/MIRROR_GRUB_POSTINSTALL.sh"
+	cat <<-GRUBMIRROR > "${ZFSROOT}${HELPER_SCRIPT}"
+	#!/bin/bash
+	# Post-install GRUB mirror helper script
+	/usr/local/bin/debianzfs \
+		-gm $DDOF \
+		$DDIF
+	GRUBMIRROR
+fi
+
 # Bind
 mount --make-private --rbind /dev /mnt/dev
 mount --make-private --rbind /proc /mnt/proc
@@ -437,4 +480,6 @@ mount | grep -v zfs | tac | awk '/\/mnt/ {print $3}' | \
 # 4. If this fails for rpool, mounting it on boot will fail and you will need to
 #    zpool import -f rpool, then exit in the initamfs prompt
 zpool export -a || exit 0
+[ -n "$HELPER_SCRIPT" ] && \
+	echo "NOTICE: A GRUB mirror helper script was placed at $HELPER_SCRIPT"
 exit 0
