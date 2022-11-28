@@ -56,6 +56,7 @@ function disk_format () {
 }
 
 function create_boot_pool () {
+	# shellcheck disable=SC2086
 	zpool create -f \
 		-o ashift=12 \
 		-o autotrim=on -d \
@@ -79,10 +80,11 @@ function create_boot_pool () {
 		-O normalization=formD \
 		-O relatime=on \
 		-O canmount=off -O mountpoint=/boot -R "$1" \
-		bpool "$2"
+		bpool $2
 }
 
 function create_root_pool () {
+	# shellcheck disable=SC2086
 	echo "$3" | zpool create -f \
 		-o ashift=12 \
 		-o autotrim=on \
@@ -92,7 +94,7 @@ function create_root_pool () {
 		-O normalization=formD \
 		-O relatime=on \
 		-O canmount=off -O mountpoint=/ -R "$1" \
-		rpool "$2"
+		rpool $2
 }
 
 function mirror_grub () {
