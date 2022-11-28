@@ -103,6 +103,16 @@ function mirror_grub () {
 	mount /boot/efi
 }
 
+function disk_by_id () {
+	disk_check "$1"
+	OUTPUT=$(find /dev/disk/by-id -lname "../../$(basename "$1")" | tail -n1)
+	if [ -z "$OUTPUT" ]; then
+		echo "ERROR: No disk by-id label found for: $1"
+		exit 1
+	fi
+	echo "$OUTPUT"
+}
+
 ################
 ### Settings ###
 ################
@@ -334,15 +344,13 @@ echo -e "DISK=${DISK}\nROOTPW=${ROOTPW}" > "$ZFSROOT/var/tmp/zfsenv"
 if [ -n "$MIRROR" ]; then
 	cp "$0" "$ZFSROOT/usr/local/bin/debianzfs"
 	chmod u+x "$ZFSROOT/usr/local/bin/debianzfs"
-	DDIF=$(find /dev/disk/by-id -lname ../../"$(basename "$DISK")" | tail -n1)
-	DDOF=$(find /dev/disk/by-id -lname ../../"$(basename "$MIRROR")" | tail -n1)
 	HELPER_SCRIPT="/root/MIRROR_GRUB_POSTINSTALL.sh"
 	cat <<-GRUBMIRROR > "${ZFSROOT}${HELPER_SCRIPT}"
 	#!/bin/bash
 	# Post-install GRUB mirror helper script
 	/usr/local/bin/debianzfs \
-		-gm $DDOF \
-		$DDIF
+		-gm $(disk_by_id "$MIRROR") \
+		$(disk_by_id "$DISK")
 	GRUBMIRROR
 fi
 
