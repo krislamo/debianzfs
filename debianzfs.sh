@@ -338,7 +338,7 @@ EOF
 
 # 4. Bind the virtual filesystems from the LiveCD environment to the new system and chroot into it
 # Copy DISK/MIRROR vars under ZFSROOT
-echo -e "DISK=${DISK}\nROOTPW=${ROOTPW}" > "$ZFSROOT/var/tmp/zfsenv"
+echo -e "DISK=\"${DISK}\"\nROOTPW=\"${ROOTPW}\"" > "$ZFSROOT/var/tmp/zfsenv"
 
 # Copy self and GRUB mirror helper script into chroot
 if [ -n "$MIRROR" ]; then
