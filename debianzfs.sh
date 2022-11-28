@@ -7,7 +7,7 @@
 ### Functions ###
 #################
 function usage () {
-	echo "Usage: ./$(basename "$0") [-mpPr] <DISK> [hostname]"
+	echo "Usage: ./$(basename "$0") [-mpPr] <DISK> <HOSTNAME>"
 }
 
 function disk_check () {
@@ -157,9 +157,6 @@ if [ "$DEBUG" == "true" ]; then
 	echo "RPOOLPW=${RPOOLPW}"
 fi
 
-# Display commands
-set -x
-
 # Are the DISK paths block devices? AND
 # Are the DISK pathes empty devices? i.e., no filesystem signatures
 disk_check "$DISK"
@@ -172,6 +169,9 @@ fi
 ###############################################
 ### Step 1: Prepare The Install Environment ###
 ###############################################
+
+# Display commands
+set -x
 
 # 1. Boot the Debian GNU/Linux Live CD... done
 # 2. Setup and update the repositories
@@ -403,7 +403,7 @@ update-grub
 # 6. Install the boot loader
 # For UEFI booting, install GRUB to the ESP
 grub-install --target=x86_64-efi --efi-directory=/boot/efi \
-						 --bootloader-id=debian --recheck --no-floppy
+	--bootloader-id=debian --recheck --no-floppy
 
 # 7. Fix filesystem mount ordering
 mkdir /etc/zfs/zfs-list.cache
