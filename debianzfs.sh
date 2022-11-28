@@ -96,9 +96,11 @@ function create_root_pool () {
 }
 
 function mirror_grub () {
+	DISK1=$(disk_by_id "$1")
+	DISK2=$(disk_by_id "$2")
 	umount /boot/efi
-	dd if="${1}-part2" of="${2}-part2"
-	efibootmgr -c -g -d "$2" -p 2 \
+	dd if="${DISK1}-part2" of="${DISK2}-part2"
+	efibootmgr -c -g -d "$DISK2" -p 2 \
 		-L "debian-${3}" -l '\EFI\debian\grubx64.efi'
 	mount /boot/efi
 }
@@ -235,20 +237,20 @@ swapoff --all
 # 3. Partition your disk(s)
 # UEFI booting + boot pool + ZFS native encryption
 disk_format "$DISK"
-[ -n "$MIRROR" ] && disk_format "$MIRROR"
-
-# 4. Create the boot pool
-if [ -z "$MIRROR" ]; then
-	create_boot_pool "$ZFSROOT" "${DISK}3"
-else
-	create_boot_pool "$ZFSROOT" "mirror ${DISK}3 ${MIRROR}3"
+DISK_BYID=$(disk_by_id "$DISK")
+if [ -n "$MIRROR" ]; then
+	disk_format "$MIRROR"
+	MIRROR_BYID=$(disk_by_id "$MIRROR")
 fi
 
+# 4. Create the boot pool
 # 5. Create the root pool
 if [ -z "$MIRROR" ]; then
-	create_root_pool "$ZFSROOT" "${DISK}4" "$RPOOLPW"
+	create_boot_pool "$ZFSROOT" "${DISK_BYID}-part3"
+	create_root_pool "$ZFSROOT" "${DISK_BYID}-part4" "$RPOOLPW"
 else
-	create_root_pool "$ZFSROOT" "mirror ${DISK}4 ${MIRROR}4" "$RPOOLPW"
+	create_boot_pool "$ZFSROOT" "mirror ${DISK_BYID}-part3 ${MIRROR_BYID}-part3"
+	create_root_pool "$ZFSROOT" "mirror ${DISK_BYID}-part4 ${MIRROR_BYID}-part4" "$RPOOLPW"
 fi
 
 ###################################
