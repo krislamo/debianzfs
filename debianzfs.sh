@@ -97,24 +97,45 @@ function create_root_pool () {
 		rpool $2
 }
 
+function part_path () {
+	DISK="$1"
+	PART="$2"
+	[ "$(disk_check "$DISK")" == 1 ] && exit 1
+	if [ "${DISK:0:7}" == "/dev/sd" ]; then
+		DISK_PART="${DISK}${PART}"
+	elif [ "${DISK:0:9}" == "/dev/nvme" ]; then
+		DISK_PART="${DISK}p${PART}"
+	else
+		echo "ERROR: Disk not recognized"
+		exit 1
+	fi
+
+	[ "$(disk_check "$DISK_PART")" == 1 ] && exit 1
+	echo "$DISK_PART"
+	exit 0
+}
+
+function part_by_uuid () {
+	OUTPUT=$(
+		blkid -s UUID | grep -e "^${1}.*${2}: UUID=" | \
+		awk '{ print substr($2, 7, length($2)-7) }'
+	)
+
+	if [ -z "$OUTPUT" ]; then
+		echo "ERROR: No disk by-uuid label found for: ${1}, partition ${2}"
+		exit 1
+	fi
+	echo "/dev/disk/by-uuid/$OUTPUT"
+}
+
 function mirror_grub () {
-	DISK1=$(disk_by_id "$1")
-	DISK2=$(disk_by_id "$2")
+	DISK1_PART2="$(part_by_uuid "$1" 2)"
+	DISK2_PART2="$(part_by_uuid "$2" 2)"
 	umount /boot/efi
-	dd if="${DISK1}-part2" of="${DISK2}-part2"
+	dd if="$DISK1_PART2" of="$DISK2_PART2"
 	efibootmgr -c -g -d "$DISK2" -p 2 \
 		-L "debian-${3}" -l '\EFI\debian\grubx64.efi'
 	mount /boot/efi
-}
-
-function disk_by_id () {
-	disk_check "$1"
-	OUTPUT=$(find /dev/disk/by-id -lname "../../$(basename "$1")" | tail -n1)
-	if [ -z "$OUTPUT" ]; then
-		echo "ERROR: No disk by-id label found for: $1"
-		exit 1
-	fi
-	echo "$OUTPUT"
 }
 
 ################
@@ -212,7 +233,7 @@ fi
 ###############################################
 
 # Display commands
-set -x
+set -xe
 
 # 1. Boot the Debian GNU/Linux Live CD... done
 # 2. Setup and update the repositories
@@ -239,20 +260,21 @@ swapoff --all
 # 3. Partition your disk(s)
 # UEFI booting + boot pool + ZFS native encryption
 disk_format "$DISK"
-DISK_BYID=$(disk_by_id "$DISK")
 if [ -n "$MIRROR" ]; then
 	disk_format "$MIRROR"
-	MIRROR_BYID=$(disk_by_id "$MIRROR")
 fi
+sleep 5
 
 # 4. Create the boot pool
 # 5. Create the root pool
 if [ -z "$MIRROR" ]; then
-	create_boot_pool "$ZFSROOT" "${DISK_BYID}-part3"
-	create_root_pool "$ZFSROOT" "${DISK_BYID}-part4" "$RPOOLPW"
+	create_boot_pool "$ZFSROOT" "$(part_path "$DISK" 3)"
+	create_root_pool "$ZFSROOT" "$(part_path "$DISK" 4)" "$RPOOLPW"
 else
-	create_boot_pool "$ZFSROOT" "mirror ${DISK_BYID}-part3 ${MIRROR_BYID}-part3"
-	create_root_pool "$ZFSROOT" "mirror ${DISK_BYID}-part4 ${MIRROR_BYID}-part4" "$RPOOLPW"
+	create_boot_pool "$ZFSROOT" \
+		"mirror $(part_path "$DISK" 3) $(part_path "$MIRROR" 3)"
+	create_root_pool "$ZFSROOT" \
+		"mirror $(part_path "$DISK" 4) $(part_path "$MIRROR" 4)" "$RPOOLPW"
 fi
 
 ###################################
@@ -342,7 +364,7 @@ EOF
 
 # 4. Bind the virtual filesystems from the LiveCD environment to the new system and chroot into it
 # Copy DISK/MIRROR vars under ZFSROOT
-echo -e "DISK=\"${DISK}\"\nROOTPW=\"${ROOTPW}\"" > "$ZFSROOT/var/tmp/zfsenv"
+echo -e "DISK=\"$(part_path "$DISK" 2)\"\nROOTPW=\"${ROOTPW}\"" > "$ZFSROOT/var/tmp/zfsenv"
 
 # Copy self and GRUB mirror helper script into chroot
 if [ -n "$MIRROR" ]; then
@@ -371,6 +393,7 @@ export LC_CTYPE=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 set -ex
 . /var/tmp/zfsenv
+rm -f /var/tmp/zfsenv
 unset CDPATH
 cd
 
@@ -391,9 +414,9 @@ echo REMAKE_INITRD=yes > /etc/dkms/zfs.conf
 # Install GRUB for UEFI booting
 apt-get install -y dosfstools
 
-mkdosfs -F 32 -s 1 -n EFI "\${DISK}2"
+mkdosfs -F 32 -s 1 -n EFI "\${DISK}"
 mkdir /boot/efi
-BLKID_BOOT="/dev/disk/by-uuid/\$(blkid -s UUID -o value \${DISK}2)"
+BLKID_BOOT="/dev/disk/by-uuid/\$(blkid -s UUID -o value \${DISK})"
 echo "\${BLKID_BOOT} /boot/efi vfat defaults 0 0" >> /etc/fstab
 mount /boot/efi
 apt-get install -y grub-efi-amd64 shim-signed
