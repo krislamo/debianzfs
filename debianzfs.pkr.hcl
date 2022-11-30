@@ -45,7 +45,7 @@ build {
   }
 
   provisioner "shell" {
-     inline = ["sudo /tmp/debianzfs.sh -ip changeme -P letmeinzfs! /dev/vda debianzfs"]
+     inline = ["sudo /tmp/debianzfs.sh -i -s0 -p changeme -P letmeinzfs! /dev/vda debianzfs"]
   }
 
 }

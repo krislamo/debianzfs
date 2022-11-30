@@ -7,14 +7,16 @@
 ### Functions ###
 #################
 function usage () {
-	echo "Usage: $(basename "$0") [-ghimpPr] <DISK> [HOSTNAME]"
+	echo "Usage: $(basename "$0") [-ghimpPrs] <DISK> [HOSTNAME]"
 	echo -e "\t-g\n\t\tMirror GRUB after the installation. Requires: -m"
 	echo -e "\n\t-h\n\t\tThe help menu, i.e., the menu you're seeing now."
-	echo -e "\n\t-i\n\t\tIgnore the check for the /dev/disk/by-id/* format."
+	echo -e "\n\t-i\n\t\tIgnore the check for the /dev/disk/by-id/* format. You'll likely want: -s"
 	echo -e "\n\t-m <MIRROR>\n\t\tSet the MIRROR disk for a ZFS mirror installation."
 	echo -e "\n\t-p <PASSWORD>\n\t\tSet the password for root. Caution: saves to file temporarily."
 	echo -e "\n\t-P <PASSWWORD>\n\t\tSet the password for encrypting the root zpool."
 	echo -e "\n\t-r <ZFSROOT>\n\t\tSet the path for the new ZFS chroot. Defaults to /mnt"
+	echo -e "\n\t-s <PARTSUFFIX>\n\t\tSet the partition suffix for disks, defaults to: -part"
+	echo -e "\t\tSet to a zero '0' to remove the suffix entirely, i.e., -s0"
 }
 
 function disk_check () {
@@ -146,7 +148,7 @@ export DEBIAN_FRONTEND=noninteractive
 CODENAME="bullseye"
 
 # Options
-while getopts ':ghim:p:P:r:' OPTION; do
+while getopts ':ghim:p:P:r:s:' OPTION; do
 	case "$OPTION" in
 		g) GRUB_MIRROR="true";;
 		i) IGNORE_BYID="true";;
@@ -154,6 +156,7 @@ while getopts ':ghim:p:P:r:' OPTION; do
 		p) ROOTPW="$OPTARG";;
 		P) RPOOLPW="$OPTARG";;
 		r) ZFSROOT="$OPTARG";;
+		s) PARTSUFFIX="$OPTARG";;
 		?)
 			usage
 			exit 1;;
@@ -188,6 +191,12 @@ fi
 # Verify variables
 [ -z "$ZFSROOT" ] && ZFSROOT="/mnt"
 
+if [ -z "$PARTSUFFIX" ]; then
+	PARTSUFFIX="-part"
+elif [ "$PARTSUFFIX" == "0" ]; then
+	PARTSUFFIX=""
+fi
+
 if [ -z "$DISK" ]; then
 	echo "ERROR: DISK not set"
 	usage
@@ -213,13 +222,16 @@ if [ -z "$RPOOLPW" ]; then
 fi
 
 if [ "$DEBUG" == "true" ]; then
-	echo "CODENAME=${CODENAME}"
-	echo "DISK=${DISK}"
-	echo "ZFSHOST=${ZFSHOST}"
-	echo "ZFSROOT=${ZFSROOT}"
-	echo "MIRROR=${MIRROR}"
-	echo "ROOTPW=${ROOTPW}"
-	echo "RPOOLPW=${RPOOLPW}"
+	echo "CODENAME='${CODENAME}'"
+	echo "DISK='${DISK}'"
+	echo "ZFSHOST='${ZFSHOST}'"
+	echo "ZFSROOT='${ZFSROOT}'"
+	echo "MIRROR='${MIRROR}'"
+	echo "ROOTPW='${ROOTPW}'"
+	echo "RPOOLPW='${RPOOLPW}'"
+	echo "PARTSUFFIX='${PARTSUFFIX}'"
+	echo "GRUB_MIRROR='${GRUB_MIRROR}'"
+	echo "IGNORE_BYID='${IGNORE_BYID}'"
 fi
 
 # Are the DISK paths block devices? AND
@@ -269,23 +281,23 @@ disk_format "$DISK"
 sleep 5
 
 # Check for partitions 3 and 4
-disk_check "$DISK-part3"
-disk_check "$DISK-part4"
+disk_check "${DISK}${PARTSUFFIX}3"
+disk_check "${DISK}${PARTSUFFIX}4"
 if [ -n "$MIRROR" ]; then
-	disk_check "$MIRROR-part3"
-	disk_check "$MIRROR-part4"
+	disk_check "${DISK}${PARTSUFFIX}3"
+	disk_check "${DISK}${PARTSUFFIX}4"
 fi
 
 # 4. Create the boot pool
 # 5. Create the root pool
 if [ -z "$MIRROR" ]; then
-	create_boot_pool "$ZFSROOT" "$DISK-part3"
-	create_root_pool "$ZFSROOT" "$DISK-part4" "$RPOOLPW"
+	create_boot_pool "$ZFSROOT" "${DISK}${PARTSUFFIX}3"
+	create_root_pool "$ZFSROOT" "${DISK}${PARTSUFFIX}4" "$RPOOLPW"
 else
 	create_boot_pool "$ZFSROOT" \
-		"mirror ${DISK}-part3 $MIRROR-part3"
+		"mirror ${DISK}${PARTSUFFIX}3 ${MIRROR}${PARTSUFFIX}3"
 	create_root_pool "$ZFSROOT" \
-		"mirror ${DISK}-part4 $MIRROR-part4" "$RPOOLPW"
+		"mirror ${DISK}${PARTSUFFIX}4 ${MIRROR}${PARTSUFFIX}4" "$RPOOLPW"
 fi
 
 ###################################
@@ -373,30 +385,27 @@ deb http://deb.debian.org/debian ${CODENAME}-updates main contrib
 deb-src http://deb.debian.org/debian ${CODENAME}-updates main contrib
 EOF
 
-# 4. Bind the virtual filesystems from the LiveCD environment to the new system and chroot into it
-# Copy DISK/MIRROR vars under ZFSROOT
-echo -e "DISK=\"$DISK\"\nROOTPW=\"${ROOTPW}\"" > "$ZFSROOT/var/tmp/zfsenv"
-
 # Copy self and GRUB mirror helper script into chroot
 if [ -n "$MIRROR" ]; then
 	cp "$0" "$ZFSROOT/usr/local/bin/debianzfs"
-	chmod u+x "$ZFSROOT/usr/local/bin/debianzfs"
+	chmod +x "$ZFSROOT/usr/local/bin/debianzfs"
 	HELPER_SCRIPT="/root/MIRROR_GRUB_POSTINSTALL.sh"
 	cat <<-GRUBMIRROR > "${ZFSROOT}${HELPER_SCRIPT}"
 	#!/bin/bash
 	# Post-install GRUB mirror helper script
 	/usr/local/bin/debianzfs \
-		-gm $MIRROR-part2 \
-		$DISK-part2)
+		-gm ${MIRROR}${PARTSUFFIX}2 \
+		${DISK}${PARTSUFFIX}2
 	GRUBMIRROR
 fi
 
-# Bind
+# 4. Bind the virtual filesystems from the LiveCD environment to the new system and chroot into it
 mount --make-private --rbind /dev /mnt/dev
 mount --make-private --rbind /proc /mnt/proc
 mount --make-private --rbind /sys /mnt/sys
 
-# Chroot
+# Copy DISK/MIRROR vars under ZFSROOT and chroot
+echo -e "DISK=\"$DISK\"\nPARTSUFFIX=\"${PARTSUFFIX}\"\nROOTPW=\"${ROOTPW}\"" > "$ZFSROOT/var/tmp/zfsenv"
 cat << CHROOT | chroot /mnt bash --login
 # Setup
 export DEBIAN_FRONTEND=noninteractive
@@ -423,9 +432,9 @@ echo REMAKE_INITRD=yes > /etc/dkms/zfs.conf
 # Install GRUB for UEFI booting
 apt-get install -y dosfstools
 
-mkdosfs -F 32 -s 1 -n EFI "\${DISK}-part2"
+mkdosfs -F 32 -s 1 -n EFI "\${DISK}\${PARTSUFFIX}2"
 mkdir /boot/efi
-BLKID_BOOT="/dev/disk/by-uuid/\$(blkid -s UUID -o value \${DISK}-part2)"
+BLKID_BOOT="/dev/disk/by-uuid/\$(blkid -s UUID -o value \${DISK}\${PARTSUFFIX}2)"
 echo "\${BLKID_BOOT} /boot/efi vfat defaults 0 0" >> /etc/fstab
 mount /boot/efi
 apt-get install -y grub-efi-amd64 shim-signed
