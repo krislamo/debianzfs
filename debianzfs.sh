@@ -20,7 +20,9 @@ function usage () {
 }
 
 function disk_check () {
-	DISK_TYPE=$(file "$1" | awk '{ print $2$3 }')
+	DISK="$1"
+	[ -L "$DISK" ] && DISK=$(readlink -f "$DISK")
+	DISK_TYPE=$(file "$DISK" | awk '{ print $2$3 }')
 	if [ "$DISK_TYPE" != "blockspecial" ]; then
 		echo "ERROR: Disk '$1' is not a block device"
 		exit 1
