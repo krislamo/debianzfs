@@ -7,7 +7,14 @@
 ### Functions ###
 #################
 function usage () {
-	echo "Usage: ./$(basename "$0") [-mpPr] <DISK> <HOSTNAME>"
+	echo "Usage: $(basename "$0") [-ghimpPr] <DISK> [HOSTNAME]"
+	echo -e "\t-g\n\t\tMirror GRUB after the installation. Requires: -m"
+	echo -e "\n\t-h\n\t\tThe help menu, i.e., the menu you're seeing now."
+	echo -e "\n\t-i\n\t\tIgnore the check for the /dev/disk/by-id/* format."
+	echo -e "\n\t-m <MIRROR>\n\t\tSet the MIRROR disk for a ZFS mirror installation."
+	echo -e "\n\t-p <PASSWORD>\n\t\tSet the password for root. Caution: saves to file temporarily."
+	echo -e "\n\t-P <PASSWWORD>\n\t\tSet the password for encrypting the root zpool."
+	echo -e "\n\t-r <ZFSROOT>\n\t\tSet the path for the new ZFS chroot. Defaults to /mnt"
 }
 
 function disk_check () {
@@ -115,27 +122,20 @@ function part_path () {
 	exit 0
 }
 
-function part_by_uuid () {
-	OUTPUT=$(
-		blkid -s UUID | grep -e "^${1}.*${2}: UUID=" | \
-		awk '{ print substr($2, 7, length($2)-7) }'
-	)
-
-	if [ -z "$OUTPUT" ]; then
-		echo "ERROR: No disk by-uuid label found for: ${1}, partition ${2}"
-		exit 1
-	fi
-	echo "/dev/disk/by-uuid/$OUTPUT"
-}
-
 function mirror_grub () {
-	DISK1_PART2="$(part_by_uuid "$1" 2)"
-	DISK2_PART2="$(part_by_uuid "$2" 2)"
 	umount /boot/efi
-	dd if="$DISK1_PART2" of="$DISK2_PART2"
-	efibootmgr -c -g -d "$DISK2" -p 2 \
+	dd if="$1" of="$2"
+	efibootmgr -c -g -d "$2" -p 2 \
 		-L "debian-${3}" -l '\EFI\debian\grubx64.efi'
 	mount /boot/efi
+}
+
+function disk_byid_check () {
+	BYID="/dev/disk/by-id/"
+	if [ ! "${1:0:${#BYID}}" == "$BYID" ]; then
+		echo "ERROR: DISK needs to be ${BYID}* format"
+		exit 1
+	fi
 }
 
 ################
@@ -146,9 +146,10 @@ export DEBIAN_FRONTEND=noninteractive
 CODENAME="bullseye"
 
 # Options
-while getopts ':gm:p:P:r:' OPTION; do
+while getopts ':ghim:p:P:r:' OPTION; do
 	case "$OPTION" in
 		g) GRUB_MIRROR="true";;
+		i) IGNORE_BYID="true";;
 		m) MIRROR="$OPTARG";;
 		p) ROOTPW="$OPTARG";;
 		P) RPOOLPW="$OPTARG";;
@@ -173,6 +174,8 @@ if [ "$GRUB_MIRROR" == "true" ]; then
 			[Yy]*)
 				disk_check "$DISK"
 				disk_check "$MIRROR"
+				[ -z "$IGNORE_BYID" ] && disk_byid_check "$DISK"
+				[ -z "$IGNORE_BYID" ] && disk_byid_check "$MIRROR"
 				mirror_grub "$DISK" "$MIRROR" 2
 				exit 0;;
 			?)
@@ -223,9 +226,11 @@ fi
 # Are the DISK pathes empty devices? i.e., no filesystem signatures
 disk_check "$DISK"
 disk_status "$DISK"
+[ -z "$IGNORE_BYID" ] && disk_byid_check "$DISK"
 if [ -n "$MIRROR" ]; then
 	disk_check "$MIRROR"
 	disk_status "$MIRROR"
+	[ -z "$IGNORE_BYID" ] && disk_byid_check "$MIRROR"
 fi
 
 ###############################################
@@ -260,21 +265,27 @@ swapoff --all
 # 3. Partition your disk(s)
 # UEFI booting + boot pool + ZFS native encryption
 disk_format "$DISK"
-if [ -n "$MIRROR" ]; then
-	disk_format "$MIRROR"
-fi
+[ -n "$MIRROR" ] && disk_format "$MIRROR"
 sleep 5
+
+# Check for partitions 3 and 4
+disk_check "$DISK-part3"
+disk_check "$DISK-part4"
+if [ -n "$MIRROR" ]; then
+	disk_check "$MIRROR-part3"
+	disk_check "$MIRROR-part4"
+fi
 
 # 4. Create the boot pool
 # 5. Create the root pool
 if [ -z "$MIRROR" ]; then
-	create_boot_pool "$ZFSROOT" "$(part_path "$DISK" 3)"
-	create_root_pool "$ZFSROOT" "$(part_path "$DISK" 4)" "$RPOOLPW"
+	create_boot_pool "$ZFSROOT" "$DISK-part3"
+	create_root_pool "$ZFSROOT" "$DISK-part4" "$RPOOLPW"
 else
 	create_boot_pool "$ZFSROOT" \
-		"mirror $(part_path "$DISK" 3) $(part_path "$MIRROR" 3)"
+		"mirror ${DISK}-part3 $MIRROR-part3"
 	create_root_pool "$ZFSROOT" \
-		"mirror $(part_path "$DISK" 4) $(part_path "$MIRROR" 4)" "$RPOOLPW"
+		"mirror ${DISK}-part4 $MIRROR-part4" "$RPOOLPW"
 fi
 
 ###################################
@@ -364,7 +375,7 @@ EOF
 
 # 4. Bind the virtual filesystems from the LiveCD environment to the new system and chroot into it
 # Copy DISK/MIRROR vars under ZFSROOT
-echo -e "DISK=\"$(part_path "$DISK" 2)\"\nROOTPW=\"${ROOTPW}\"" > "$ZFSROOT/var/tmp/zfsenv"
+echo -e "DISK=\"$DISK\"\nROOTPW=\"${ROOTPW}\"" > "$ZFSROOT/var/tmp/zfsenv"
 
 # Copy self and GRUB mirror helper script into chroot
 if [ -n "$MIRROR" ]; then
@@ -375,8 +386,8 @@ if [ -n "$MIRROR" ]; then
 	#!/bin/bash
 	# Post-install GRUB mirror helper script
 	/usr/local/bin/debianzfs \
-		-gm $(disk_by_id "$MIRROR") \
-		$(disk_by_id "$DISK")
+		-gm $MIRROR-part2 \
+		$DISK-part2)
 	GRUBMIRROR
 fi
 
@@ -389,8 +400,6 @@ mount --make-private --rbind /sys /mnt/sys
 cat << CHROOT | chroot /mnt bash --login
 # Setup
 export DEBIAN_FRONTEND=noninteractive
-export LC_CTYPE=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
 set -ex
 . /var/tmp/zfsenv
 rm -f /var/tmp/zfsenv
@@ -414,9 +423,9 @@ echo REMAKE_INITRD=yes > /etc/dkms/zfs.conf
 # Install GRUB for UEFI booting
 apt-get install -y dosfstools
 
-mkdosfs -F 32 -s 1 -n EFI "\${DISK}"
+mkdosfs -F 32 -s 1 -n EFI "\${DISK}-part2"
 mkdir /boot/efi
-BLKID_BOOT="/dev/disk/by-uuid/\$(blkid -s UUID -o value \${DISK})"
+BLKID_BOOT="/dev/disk/by-uuid/\$(blkid -s UUID -o value \${DISK}-part2)"
 echo "\${BLKID_BOOT} /boot/efi vfat defaults 0 0" >> /etc/fstab
 mount /boot/efi
 apt-get install -y grub-efi-amd64 shim-signed
