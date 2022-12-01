@@ -20,16 +20,18 @@ function usage () {
 }
 
 function disk_check () {
-	DISK="$1"
+	local DISK="$1"
+	local DISK_TYPE
 	[ -L "$DISK" ] && DISK=$(readlink -f "$DISK")
 	DISK_TYPE=$(file "$DISK" | awk '{ print $2$3 }')
 	if [ "$DISK_TYPE" != "blockspecial" ]; then
-		echo "ERROR: Disk '$1' is not a block device"
+		echo "ERROR: Disk '$DISK' is not a block device"
 		exit 1
 	fi
 }
 
 function disk_status () {
+	local OUTPUT
 	OUTPUT=$(wipefs "$1")
 	if [ -n "$OUTPUT" ]; then
 		echo "ERROR: $1 is not empty"
@@ -39,6 +41,8 @@ function disk_status () {
 }
 
 function password_prompt () {
+	local password
+	local password_confirm
 	unset PASSWORD_PROMPT_RESULT
 	while true; do
 		read -r -s -p "${1}: " password
@@ -109,8 +113,8 @@ function create_root_pool () {
 }
 
 function part_path () {
-	DISK="$1"
-	PART="$2"
+	local DISK="$1"
+	local PART="$2"
 	[ "$(disk_check "$DISK")" == 1 ] && exit 1
 	if [ "${DISK:0:7}" == "/dev/sd" ]; then
 		DISK_PART="${DISK}${PART}"
@@ -135,7 +139,7 @@ function mirror_grub () {
 }
 
 function disk_byid_check () {
-	BYID="/dev/disk/by-id/"
+	local BYID="/dev/disk/by-id/"
 	if [ ! "${1:0:${#BYID}}" == "$BYID" ]; then
 		echo "ERROR: DISK needs to be ${BYID}* format"
 		exit 1
