@@ -1,3 +1,3 @@
 #!/bin/bash
 sudo passwd -d user
-sudo chmod u+x /tmp/debianzfs.sh
+sudo chmod u+x /tmp/debianzfs

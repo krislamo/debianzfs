@@ -1,9 +1,11 @@
 # Set 'password' using shell var: PKR_VAR_password=$(pwgen -s 8 1)
 variable "password" {}
+variable "release" {}
+variable "sha256" {}
 
-source "qemu" "bullseye-live" {
-  iso_url           = "https://cdimage.debian.org/debian-cd/current-live/amd64/iso-hybrid/debian-live-11.5.0-amd64-standard.iso"
-  iso_checksum      = "sha256:8172b188061d098080bb315972becbe9bd387c856866746cee018102cd00fc9b"
+source "qemu" "debian-live" {
+  iso_url           = "https://cdimage.debian.org/debian-cd/current-live/amd64/iso-hybrid/debian-live-${var.release}-amd64-standard.iso"
+  iso_checksum      = "sha256:${var.sha256}"
   output_directory  = "output"
   shutdown_command  = "echo 'packer' | sudo -S shutdown -P now"
   disk_size         = "5000M"
@@ -19,7 +21,7 @@ source "qemu" "bullseye-live" {
   disk_interface    = "virtio"
   boot_wait         = "5s"
   boot_command      = [
-        "<enter><wait10>",
+        "<enter><wait20>",
         "<enter><wait>",
         "sudo -i<enter><wait>",
         "read -s userpw<enter><wait>",
@@ -33,11 +35,11 @@ source "qemu" "bullseye-live" {
 
 build {
   name = "zfs"
-  sources = ["source.qemu.bullseye-live"]
+  sources = ["source.qemu.debian-live"]
 
   provisioner "file" {
     source      = "debianzfs.sh"
-    destination = "/tmp/debianzfs.sh"
+    destination = "/tmp/debianzfs"
   }
 
   provisioner "shell" {
@@ -45,7 +47,7 @@ build {
   }
 
   provisioner "shell" {
-     inline = ["sudo /tmp/debianzfs.sh -i -s0 -p changeme -P letmeinzfs! /dev/vda debianzfs"]
+     inline = ["sudo /tmp/debianzfs -i -s0 -p 'changeme' -P 'letmeinzfs!' /dev/vda debianzfs"]
   }
 
 }

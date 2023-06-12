@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script is based off official guide: see "Debian Bullseye Root on ZFS"
+# This script is originally based off the "Debian Bullseye Root on ZFS" guide
 # https://openzfs.github.io/openzfs-docs/Getting%20Started/Debian/Debian%20Bullseye%20Root%20on%20ZFS.html
 
 #################
@@ -151,7 +151,7 @@ function disk_byid_check () {
 ################
 # Static
 export DEBIAN_FRONTEND=noninteractive
-CODENAME="bullseye"
+CODENAME="bookworm"
 
 # Options
 while getopts ':ghim:p:P:r:s:' OPTION; do
@@ -422,7 +422,7 @@ unset CDPATH
 cd
 
 # 5. Configure a basic system environment
-ln -s /proc/self/mounts /etc/mtab
+ln -fs /proc/self/mounts /etc/mtab
 apt-get update && apt-get upgrade -y
 apt-get install -y console-setup locales
 
