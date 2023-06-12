@@ -112,24 +112,6 @@ function create_root_pool () {
 		rpool $2
 }
 
-function part_path () {
-	local DISK="$1"
-	local PART="$2"
-	[ "$(disk_check "$DISK")" == 1 ] && exit 1
-	if [ "${DISK:0:7}" == "/dev/sd" ]; then
-		DISK_PART="${DISK}${PART}"
-	elif [ "${DISK:0:9}" == "/dev/nvme" ]; then
-		DISK_PART="${DISK}p${PART}"
-	else
-		echo "ERROR: Disk not recognized"
-		exit 1
-	fi
-
-	[ "$(disk_check "$DISK_PART")" == 1 ] && exit 1
-	echo "$DISK_PART"
-	exit 0
-}
-
 function mirror_grub () {
 	umount /boot/efi
 	dd if="$1" of="$2"
